@@ -69,7 +69,7 @@ int main()
             double price;
             std::cout << "Enter uppercase ticker (e.g., NVDA): ";
             std::cin >> tick;
-            std::cin.ignore(); // Clean buffer
+            std::cin.ignore(); 
             std::cout << "Enter company name: ";
             std::getline(std::cin, name);
             std::cout << "Enter mock starting price: ";
@@ -91,4 +91,3 @@ int main()
 
     return 0;
 }
-//mocker 3
