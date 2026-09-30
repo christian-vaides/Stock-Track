@@ -3,6 +3,10 @@
 #include <iostream>
 #include <string>
 #include <iomanip>
+#include <fstream>
+#include <sstream>
+
+using namespace std;
 
 class Stock {
 private:
@@ -12,9 +16,11 @@ private:
 
 public:
     Stock(std::string t, std::string name, double price)
-    :ticker(t), companyName(name), CurrentPrice(price){}
+        :ticker(t), companyName(name), CurrentPrice(price) {}
 
-    std::string getTicker() const { return ticker;}
+    std::string getTicker() const { return ticker; }
+    string getCompanyName() const { return companyName; }
+    double getPrice() const { return CurrentPrice; }
 
     void displayRow() const {
         std::cout << std::left << std::setw(10) << ticker <<
@@ -23,18 +29,61 @@ public:
     }
 };
 
+void saveWatchlist(const vector<Stock>& watchlist) {
+    ofstream outFile("watchlist.txt");
+
+    if (!outFile) {
+        cout << "Warning: Could not open watchlist.txt Data was not saved.\n";
+        return;
+    }
+    for (const auto& stock : watchlist) {
+        outFile << stock.getTicker() << "|"
+            << stock.getCompanyName() << "|"
+            << stock.getPrice() << endl;
+    }
+
+    outFile.close();
+}
+
+void loadWatchlist(vector<Stock>& watchlist) {
+    ifstream inFile("watchlist.txt");
+
+    if (!inFile) {
+        watchlist.push_back(Stock("AAPL", "Apple Inc.", 241.50));
+        watchlist.push_back(Stock("TSLA", "Tesla Inc.", 260.85));
+        watchlist.push_back(Stock("MSFT", "Microsoft Corp.", 415.20));
+        return;
+    }
+
+    string line;
+    while (getline(inFile, line)) {
+        stringstream ss(line);
+        string ticker, name, priceStr;
+        double price;
+
+        if (getline(ss, ticker, '|') &&
+            getline(ss, name, '|') &&
+            getline(ss, priceStr, '|')) {
+
+            price = stod(priceStr);
+            watchlist.push_back(Stock(ticker, name, price));
+        }
+    }
+
+    inFile.close();
+}
+
 int main()
 {
     std::vector<Stock> watchlist;
 
-    watchlist.push_back(Stock("APPL", "Apple Inc.", 241.50));
-    watchlist.push_back(Stock("TSLA", "Tesla Inc.", 260.85));
-    watchlist.push_back(Stock("MSFT", "Microsoft corp", 415.20));
+    //phase 2 auto load a watchlist
+    loadWatchlist(watchlist);
 
     int choice = 0;
 
     std::cout << "==========================================\n";
-    std::cout << "  STOCK TRACKING ENGINE - PHASE 1 \n";
+    std::cout << "  STOCK TRACKING ENGINE - PHASE 2 \n";
     std::cout << "==========================================\n";
 
     while (choice != 3) {
@@ -69,7 +118,7 @@ int main()
             double price;
             std::cout << "Enter uppercase ticker (e.g., NVDA): ";
             std::cin >> tick;
-            std::cin.ignore(); 
+            std::cin.ignore(); // Clean buffer
             std::cout << "Enter company name: ";
             std::getline(std::cin, name);
             std::cout << "Enter mock starting price: ";
@@ -81,7 +130,9 @@ int main()
         }
 
         case 3:
-            std::cout << "\nShutting down engine thread safety safely. Active session closed.\n";
+            std::cout << "\nSaving data from this session to txt file.\n";
+            saveWatchlist(watchlist);
+            cout << "Shutting down safely. Active session closed.\n";
             break;
 
         default:
