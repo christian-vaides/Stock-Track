@@ -7,6 +7,7 @@
 #include <chrono>
 #include <ctime>
 #include <cstdlib>
+#include <algorithm>
 
 using namespace std;
 
@@ -16,31 +17,71 @@ private:
     std::string ticker;
     double currentPrice;
     string lastUpdated; //track last network sync time
+    vector <double> priceHistory;
 
 public:
     Stock(std::string t, std::string name, double price, string timestamp = "Never")
-        :ticker(t), companyName(name), currentPrice(price), lastUpdated(timestamp) {}
+        :ticker(t), companyName(name), currentPrice(price), lastUpdated(timestamp)
+    {
+        priceHistory.push_back(price);
+    }
 
     std::string getTicker() const { return ticker; }
     string getCompanyName() const { return companyName; }
     double getPrice() const { return currentPrice; }
     string getTimestamp() const { return lastUpdated; }
+    const vector<double>& getHistory() const { return priceHistory; }
 
     void syncLivePrice(double newPrice, string currentTimestamp) {
         currentPrice = newPrice;
         lastUpdated = currentTimestamp;
+        priceHistory.push_back(newPrice);
+        if (priceHistory.size() > 5) {
+            priceHistory.erase(priceHistory.begin());
+        }
+    }
+
+    double calculatePrediction() const {
+        if (priceHistory.size() < 2) {
+            return currentPrice;
+        }
+        double sum = 0;
+        for (double p : priceHistory) {
+            sum += p;
+        }
+        double movingAverage = sum / priceHistory.size();
+        double lastDelta = currentPrice - priceHistory[priceHistory.size() - 2];
+        return movingAverage + (lastDelta * 0.5);
+    }
+
+    //converter of info to JSON
+
+    string toJSON()const {
+        stringstream json;
+        json << "{"
+            << "\"ticker\":\"" << ticker << "\","
+            << "\"companyName\":\"" << companyName << "\","
+            << "\"price\":" << currentPrice << ","
+            << "\"forecast\":" << calculatePrediction() << ","
+            << "\"lastUpdated\":\"" << lastUpdated << "\""
+            << "}";
+        return json.str();
     }
 
     void displayRow() const {
-        std::cout << std::left << std::setw(10) << ticker <<
-            std::setw(25) << companyName
-            << setw(12) << ("$" + to_string(currentPrice).substr(0, to_string(currentPrice).find(".") + 3))
-            << lastUpdated << endl;
+        double forecast = calculatePrediction();
+        cout << left << setw(10) << ticker
+            << setw(25) << companyName
+            << "$" << fixed << setprecision(2) << setw(11) << currentPrice
+            << "$" << fixed << setprecision(2) << setw(14) << forecast
+            << right << setw(11) << lastUpdated << endl;
 
     }
 };
 
-//part of phase 3, simulated network engine
+//************************************
+// PHASE 5 SERVER BROADCAST UTILITIES
+//************************************
 
 //funct that generates timestamps
 string getCurrentTimeStr() {
@@ -82,8 +123,11 @@ void saveWatchlist(const vector<Stock>& watchlist) {
             << stock.getCompanyName() << "|"
             << stock.getPrice() << "|"
             << stock.getTimestamp() << endl;
+        for (double h : stock.getHistory()) {
+            outFile << "," << h;
+        }
+        outFile << endl;
     }
-
     outFile.close();
 }
 
@@ -100,96 +144,67 @@ void loadWatchlist(vector<Stock>& watchlist) {
     string line;
     while (getline(inFile, line)) {
         stringstream ss(line);
-        string ticker, name, priceStr, timestamp;
+        string ticker, name, priceStr, timestamp, historyBlock;
 
         if (getline(ss, ticker, '|') &&
             getline(ss, name, '|') &&
             getline(ss, priceStr, '|') &&
             getline(ss, timestamp, '|')) {
-
-            watchlist.push_back(Stock(ticker, name, stod(priceStr), timestamp));
+            Stock tempStock(ticker, name, stod(priceStr), timestamp);
+            if (getline(ss, historyBlock)) {
+                stringstream histSS(historyBlock);
+                string valStr;
+                while (getline(histSS, valStr, ',')) {
+                    if (!valStr.empty()) {
+                        tempStock.syncLivePrice(stod(valStr), timestamp);
+                    }
+                }
+            }
+            watchlist.push_back(tempStock);
         }
     }
 
     inFile.close();
 }
 
+//API packaging logic
+
+string packageWatchlistToJSON(const vector<Stock>& watchlist) {
+    stringstream jsonList;
+    jsonList << "[\n";
+
+    for (size_t i = 0; i < watchlist.size(); ++i) {
+        jsonList << "  " << watchlist[i].toJSON();
+        if (i < watchlist.size() - 1) {
+            jsonList << ",\n";
+        }
+    }
+    jsonList << "\n]";
+    return jsonList.str();
+}
+
 int main()
 {
-    //rand tool for testing price changes track
+    //rand tool for testing, price changes tracker
     srand(static_cast<unsigned int>(time(0)));
 
     vector<Stock> watchlist;
-
-    //phase 2 auto load a watchlist
     loadWatchlist(watchlist);
 
-    int choice = 0;
+    //int choice = 0;
 
     std::cout << "==========================================\n";
-    std::cout << "  STOCK TRACKING ENGINE - PHASE 2 \n";
+    std::cout << "  STOCK TRACKING ENGINE - PHASE 5 \n";
     std::cout << "==========================================\n";
 
-    while (choice != 4) {
-        cout << "\n--- Main Menu ---\n";
-        cout << "1. View Active Watchlist\n";
-        cout << "2. Sync Live Market Prices.\n";
-        cout << "3. Add new Stock Profile\n";
-        cout << "4. Save & Exit. \n";
-        cout << "Select and option: ";
+    fetchLiveMarketPrices(watchlist);
 
-        if (!(std::cin >> choice)) {
-            cout << "Invalid numeric input. Resetting menu context.\n";
-            cin.clear();
-            cin.ignore(10000, '\n');
-            continue;
-        }
+    cout << "Server Listening Loop Active on http://localhost:8080\n";
+    cout << "Simulating Browser Network Call (HTTP GET /api/watchlist)....\n\n";
 
-        switch (choice) {
-        case 1:
-            std::cout << "\n------------------------------------------\n";
-            std::cout << std::left << std::setw(10) << "TICKER"
-                << std::setw(25) << "COMPANY NAME"
-                << setw(12) << "PRICE"
-                << "Last updated sync\n";
-            std::cout << "------------------------------------------\n";
-            for (const auto& stock : watchlist) {
-                stock.displayRow();
-            }
-            std::cout << "------------------------------------------\n";
-            break;
-
-        case 2:
-            cout << "\nConnecting to network... Fetching market data...";
-            fetchLiveMarketPrices(watchlist);
-            cout << "Sync complete! Data refreshed successfully.";
-            break;
-
-        case 3: {
-            std::string tick, name;
-            double price;
-            std::cout << "Enter ticker: ";
-            std::cin >> tick;
-            std::cin.ignore(); // Clean buffer
-            std::cout << "Enter company name: ";
-            std::getline(std::cin, name);
-            std::cout << "Enter current price: ";
-            std::cin >> price;
-
-            watchlist.push_back(Stock(tick, name, price, getCurrentTimeStr()));
-            std::cout << "\nProfile initialized and appended to tracker.\n";
-            break;
-        }
-
-        case 4:
-            saveWatchlist(watchlist);
-            cout << "Data saved. Shutting down safely. Active session closed.\n";
-            break;
-
-        default:
-            std::cout << "Invalid menu item choice. Try again.\n";
-        }
-    }
+    string webResponsePacket = packageWatchlistToJSON(watchlist);
+    cout << webResponsePacket << "\n";
+    cout << "========================================================================\n";
 
     return 0;
 }
